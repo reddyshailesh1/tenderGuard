@@ -1,0 +1,114 @@
+[
+  {
+    "id": "BENCH_001",
+    "case_type": "numerical_conflict",
+    "clause_a": "Clause 4.1: The bidder must submit an Earnest Money Deposit (EMD) of $50,000 via irrevocable bank guarantee.",
+    "clause_b": "Clause 18.3: Bid security deposit is specified as $75,000 payable by demand draft before bid submission.",
+    "ground_truth_label": 1,
+    "description": "Direct numerical conflict in bid security / EMD deposit amount ($50,000 vs $75,000)."
+  },
+  {
+    "id": "BENCH_002",
+    "case_type": "numerical_conflict",
+    "clause_a": "Section 8.2: The contractor warrants all delivered hardware against defects for a period of 12 months from commercial acceptance.",
+    "clause_b": "Schedule C: All supplied computer hardware and peripherals shall carry a comprehensive 36-month on-site warranty.",
+    "ground_truth_label": 1,
+    "description": "Direct numerical discrepancy in warranty duration (12 months vs 36 months)."
+  },
+  {
+    "id": "BENCH_003",
+    "case_type": "numerical_conflict",
+    "clause_a": "Clause 11.5: Liquidated damages for delayed milestones shall be capped at 5% of the total contract value.",
+    "clause_b": "Clause 22.1: The maximum cumulative deduction for liquidated damages is 10% of the overall order value.",
+    "ground_truth_label": 1,
+    "description": "Conflict in liquidated damages liability cap (5% vs 10%)."
+  },
+  {
+    "id": "BENCH_004",
+    "case_type": "date_conflict",
+    "clause_a": "Section 1.3: All technical and financial bids must be received no later than November 15, 2026, 17:00 UTC.",
+    "clause_b": "Clause 2.1: The deadline for submission of bids is November 30, 2026, 17:00 UTC.",
+    "ground_truth_label": 1,
+    "description": "Conflicting tender closing dates across different sections (Nov 15 vs Nov 30)."
+  },
+  {
+    "id": "BENCH_005",
+    "case_type": "date_conflict",
+    "clause_a": "Clause 3.2: The pre-bid clarification conference will be conducted on December 05, 2026.",
+    "clause_b": "Clause 1.4: Bids must be submitted no later than November 30, 2026.",
+    "ground_truth_label": 1,
+    "description": "Chronological impossibility: pre-bid meeting occurs after the tender submission closes."
+  },
+  {
+    "id": "BENCH_006",
+    "case_type": "date_conflict",
+    "clause_a": "Clause 2.4: Technical bids will be opened publicly on November 10, 2026, at 14:00 hours.",
+    "clause_b": "Clause 2.2: The closing date for submission of tenders is November 20, 2026.",
+    "ground_truth_label": 1,
+    "description": "Chronological impossibility: public opening occurs prior to the submission deadline."
+  },
+  {
+    "id": "BENCH_007",
+    "case_type": "complementary_requirements",
+    "clause_a": "Clause 5.1: The contractor must deliver all 500 laptops within 30 days of contract execution.",
+    "clause_b": "Clause 9.3: Equipment delivery shall be completed within one month of formal contract signing.",
+    "ground_truth_label": 0,
+    "description": "Complementary and logically entailed delivery requirement (30 days = one month)."
+  },
+  {
+    "id": "BENCH_008",
+    "case_type": "complementary_requirements",
+    "clause_a": "Clause 6.2: The supplier shall maintain ISO 9001 and ISO 27001 certifications throughout the contract lifecycle.",
+    "clause_b": "Clause 14.1: Bidders must possess valid ISO quality management and information security certifications.",
+    "ground_truth_label": 0,
+    "description": "Consistent qualification standards reinforcing the same compliance criteria."
+  },
+  {
+    "id": "BENCH_009",
+    "case_type": "unrelated_clauses",
+    "clause_a": "Clause 7.1: Server racks must be 42U high with front and rear perforated steel mesh doors.",
+    "clause_b": "Clause 19.4: The contractor must maintain comprehensive third-party general liability insurance of $2,000,000.",
+    "ground_truth_label": 0,
+    "description": "Completely unrelated specifications (hardware rack physical form factor vs insurance policy)."
+  },
+  {
+    "id": "BENCH_010",
+    "case_type": "unrelated_clauses",
+    "clause_a": "Clause 3.1: Minimum annual turnover of the bidder shall be $5,000,000 in each of the past three fiscal years.",
+    "clause_b": "Clause 12.2: All delivered software code must pass automated static application security testing (SAST).",
+    "ground_truth_label": 0,
+    "description": "Unrelated provisions (financial turnover threshold vs code security testing standard)."
+  },
+  {
+    "id": "BENCH_011",
+    "case_type": "repeated_clauses",
+    "clause_a": "Clause 1.1: This tender is issued under the public procurement regulations of the Republic of Ireland.",
+    "clause_b": "Clause 25.1: This tender is issued under the public procurement regulations of the Republic of Ireland.",
+    "ground_truth_label": 0,
+    "description": "Identical boilerplate repetition without contradiction."
+  },
+  {
+    "id": "BENCH_012",
+    "case_type": "repeated_clauses",
+    "clause_a": "Clause 4.2: Liquidated damages shall be levied at 0.5% per week of delay.",
+    "clause_b": "Clause 15.3: Liquidated damages shall be levied at 1.5% per week of delay.",
+    "ground_truth_label": 1,
+    "description": "Repeated clause with contradictory penalty rates (0.5% vs 1.5% per week)."
+  },
+  {
+    "id": "BENCH_013",
+    "case_type": "ambiguous_requirements",
+    "clause_a": "Clause 8.1: Subcontracting is permitted only upon prior written consent from the Authority.",
+    "clause_b": "Clause 16.4: The contractor may freely assign or subcontract implementation tasks to accredited partners.",
+    "ground_truth_label": 1,
+    "description": "Contradictory and ambiguous subcontracting rights (prohibited without consent vs freely allowed)."
+  },
+  {
+    "id": "BENCH_014",
+    "case_type": "ambiguous_requirements",
+    "clause_a": "Clause 10.2: Liquidated damages are applicable immediately upon milestone delay without cure period.",
+    "clause_b": "Clause 17.1: In the event of delay, the contractor shall be afforded a mandatory 14-day cure period before penalties accrue.",
+    "ground_truth_label": 1,
+    "description": "Ambiguous penalty conditions (immediate accrual vs mandatory 14-day cure period)."
+  }
+]
