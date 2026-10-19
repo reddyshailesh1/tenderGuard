@@ -307,8 +307,12 @@ def get_database_manager() -> DatabaseManager:
 @st.cache_resource
 def get_pipeline() -> TenderPipeline:
     """Singleton instance of end-to-end TenderPipeline."""
+    import importlib
+    import tenderguard.pipeline
+    importlib.reload(tenderguard.pipeline)
+    from tenderguard.pipeline import TenderPipeline as FreshPipeline
     db = DatabaseManager(DEFAULT_DB_PATH)
-    return TenderPipeline(config=DEFAULT_CONFIG, db_manager=db)
+    return FreshPipeline(config=DEFAULT_CONFIG, db_manager=db)
 
 
 db_manager = get_database_manager()
