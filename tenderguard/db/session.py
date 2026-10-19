@@ -25,6 +25,18 @@ class DatabaseManager:
         """Execute DDL statements to create tables and indexes."""
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         with self.get_connection() as conn:
+            # Automatic schema migration for existing databases: ensure documents table has user_id before index creation
+            table_check = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='documents'").fetchone()
+            if table_check:
+                cursor = conn.execute("PRAGMA table_info(documents)")
+                columns = [row["name"] for row in cursor.fetchall()]
+                if "user_id" not in columns:
+                    conn.execute("ALTER TABLE documents ADD COLUMN user_id INTEGER REFERENCES users(id) ON DELETE CASCADE")
+                    first_user = conn.execute("SELECT id FROM users ORDER BY id ASC LIMIT 1").fetchone()
+                    if first_user:
+                        conn.execute("UPDATE documents SET user_id = ? WHERE user_id IS NULL", (first_user["id"],))
+                    conn.commit()
+
             conn.executescript(SCHEMA_SQL)
             conn.commit()
         self.seed_default_user()
@@ -35,12 +47,13 @@ class DatabaseManager:
         """Insert or replace document record."""
         sql = """
         INSERT OR REPLACE INTO documents 
-        (id, filename, file_hash, total_pages, file_size_bytes, scanned_pages_count, status, error_message)
-        VALUES (:id, :filename, :file_hash, :total_pages, :file_size_bytes, :scanned_pages_count, :status, :error_message)
+        (id, user_id, filename, file_hash, total_pages, file_size_bytes, scanned_pages_count, status, error_message)
+        VALUES (:id, :user_id, :filename, :file_hash, :total_pages, :file_size_bytes, :scanned_pages_count, :status, :error_message)
         """
         with self.get_connection() as conn:
             conn.execute(sql, {
                 "id": doc_data["id"],
+                "user_id": doc_data.get("user_id"),
                 "filename": doc_data["filename"],
                 "file_hash": doc_data["file_hash"],
                 "total_pages": doc_data.get("total_pages", 0),
@@ -67,22 +80,31 @@ class DatabaseManager:
                 )
             conn.commit()
 
-    def get_document(self, doc_id: str) -> Optional[Dict[str, Any]]:
-        """Retrieve document metadata by ID."""
+    def get_document(self, doc_id: str, user_id: Optional[int] = None) -> Optional[Dict[str, Any]]:
+        """Retrieve document metadata by ID, optionally filtered by user_id."""
         with self.get_connection() as conn:
-            row = conn.execute("SELECT * FROM documents WHERE id = ?", (doc_id,)).fetchone()
+            if user_id is not None:
+                row = conn.execute("SELECT * FROM documents WHERE id = ? AND user_id = ?", (doc_id, user_id)).fetchone()
+            else:
+                row = conn.execute("SELECT * FROM documents WHERE id = ?", (doc_id,)).fetchone()
             return dict(row) if row else None
 
-    def list_documents(self) -> List[Dict[str, Any]]:
-        """List all documents sorted by upload time descending."""
+    def list_documents(self, user_id: Optional[int] = None) -> List[Dict[str, Any]]:
+        """List documents sorted by upload time descending, optionally filtered by user_id."""
         with self.get_connection() as conn:
-            rows = conn.execute("SELECT * FROM documents ORDER BY uploaded_at DESC").fetchall()
+            if user_id is not None:
+                rows = conn.execute("SELECT * FROM documents WHERE user_id = ? ORDER BY uploaded_at DESC", (user_id,)).fetchall()
+            else:
+                rows = conn.execute("SELECT * FROM documents ORDER BY uploaded_at DESC").fetchall()
             return [dict(r) for r in rows]
 
-    def delete_document(self, doc_id: str) -> None:
-        """Cascade delete a document and its dependent data."""
+    def delete_document(self, doc_id: str, user_id: Optional[int] = None) -> None:
+        """Cascade delete a document, optionally verifying ownership by user_id."""
         with self.get_connection() as conn:
-            conn.execute("DELETE FROM documents WHERE id = ?", (doc_id,))
+            if user_id is not None:
+                conn.execute("DELETE FROM documents WHERE id = ? AND user_id = ?", (doc_id, user_id))
+            else:
+                conn.execute("DELETE FROM documents WHERE id = ?", (doc_id,))
             conn.commit()
 
     # ------------------ Page Operations ------------------
@@ -112,23 +134,41 @@ class DatabaseManager:
         (id, doc_id, page_number, clause_number, original_text, char_start, char_end, category, category_confidence, classification_model)
         VALUES (:id, :doc_id, :page_number, :clause_number, :original_text, :char_start, :char_end, :category, :category_confidence, :classification_model)
         """
+        normalized_clauses = [
+            {
+                "id": c["id"],
+                "doc_id": c["doc_id"],
+                "page_number": c.get("page_number", 1),
+                "clause_number": c.get("clause_number"),
+                "original_text": c["original_text"],
+                "char_start": c.get("char_start", 0),
+                "char_end": c.get("char_end", len(c.get("original_text", ""))),
+                "category": c.get("category"),
+                "category_confidence": c.get("category_confidence"),
+                "classification_model": c.get("classification_model")
+            }
+            for c in clauses
+        ]
         with self.get_connection() as conn:
-            conn.executemany(sql, clauses)
+            conn.executemany(sql, normalized_clauses)
             conn.commit()
 
-    def get_clauses(self, doc_id: str, category: Optional[str] = None) -> List[Dict[str, Any]]:
-        """Retrieve clauses for a document with optional category filter."""
+    def get_clauses(self, doc_id: str, category: Optional[str] = None, user_id: Optional[int] = None) -> List[Dict[str, Any]]:
+        """Retrieve clauses for a document with optional category filter and user authorization."""
         with self.get_connection() as conn:
-            if category:
-                rows = conn.execute(
-                    "SELECT * FROM clauses WHERE doc_id = ? AND category = ? ORDER BY page_number ASC, id ASC",
-                    (doc_id, category)
-                ).fetchall()
+            query = "SELECT c.* FROM clauses c"
+            params: List[Any] = []
+            if user_id is not None:
+                query += " JOIN documents d ON c.doc_id = d.id WHERE c.doc_id = ? AND d.user_id = ?"
+                params.extend([doc_id, user_id])
             else:
-                rows = conn.execute(
-                    "SELECT * FROM clauses WHERE doc_id = ? ORDER BY page_number ASC, id ASC",
-                    (doc_id,)
-                ).fetchall()
+                query += " WHERE c.doc_id = ?"
+                params.append(doc_id)
+            if category:
+                query += " AND c.category = ?"
+                params.append(category)
+            query += " ORDER BY c.page_number ASC, c.id ASC"
+            rows = conn.execute(query, params).fetchall()
             return [dict(r) for r in rows]
 
     def update_clause_category(self, clause_id: str, category: str, confidence: float, model_name: str) -> None:
@@ -179,8 +219,30 @@ class DatabaseManager:
         INSERT OR IGNORE INTO reviews (finding_id, status, reviewer_name, reviewer_comment)
         VALUES (?, 'Pending Review', 'System Default', '')
         """
+        normalized_findings = [
+            {
+                "id": f["id"],
+                "doc_id": f["doc_id"],
+                "finding_type": f["finding_type"],
+                "clause_a_id": f["clause_a_id"],
+                "clause_b_id": f.get("clause_b_id"),
+                "clause_a_text": f["clause_a_text"],
+                "clause_b_text": f.get("clause_b_text"),
+                "page_numbers": f.get("page_numbers", "1"),
+                "semantic_similarity": f.get("semantic_similarity"),
+                "nli_label": f.get("nli_label"),
+                "nli_contradiction_score": f.get("nli_contradiction_score"),
+                "nli_entailment_score": f.get("nli_entailment_score"),
+                "nli_neutral_score": f.get("nli_neutral_score"),
+                "rule_triggered": f["rule_triggered"],
+                "explanation": f["explanation"],
+                "priority": f.get("priority", "Medium"),
+                "model_identifier": f.get("model_identifier", "rule_engine")
+            }
+            for f in findings
+        ]
         with self.get_connection() as conn:
-            for f in findings:
+            for f in normalized_findings:
                 conn.execute(f_sql, f)
                 conn.execute(rev_sql, (f["id"],))
             conn.commit()
@@ -188,11 +250,12 @@ class DatabaseManager:
     def get_findings_with_reviews(
         self,
         doc_id: Optional[str] = None,
+        user_id: Optional[int] = None,
         priority: Optional[str] = None,
         review_status: Optional[str] = None,
         finding_type: Optional[str] = None
     ) -> List[Dict[str, Any]]:
-        """Retrieve findings joined with their corresponding human review decisions."""
+        """Retrieve findings joined with their corresponding human review decisions, optionally filtered by user_id or doc_id."""
         query = """
         SELECT f.*, 
                r.status AS review_status, 
@@ -200,6 +263,7 @@ class DatabaseManager:
                r.reviewer_comment, 
                r.reviewed_at
         FROM findings f
+        JOIN documents d ON f.doc_id = d.id
         LEFT JOIN reviews r ON f.id = r.finding_id
         WHERE 1=1
         """
@@ -207,6 +271,9 @@ class DatabaseManager:
         if doc_id:
             query += " AND f.doc_id = ?"
             params.append(doc_id)
+        if user_id is not None:
+            query += " AND d.user_id = ?"
+            params.append(user_id)
         if priority:
             query += " AND f.priority = ?"
             params.append(priority)

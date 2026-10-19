@@ -76,6 +76,7 @@ class TenderPipeline:
         file_source: Union[str, Path, bytes],
         filename: str,
         doc_id: Optional[str] = None,
+        user_id: Optional[int] = None,
         progress_callback: Optional[Callable[[str, float, str], None]] = None
     ) -> Dict[str, Any]:
         """Execute the complete end-to-end tender analysis workflow."""
@@ -88,12 +89,21 @@ class TenderPipeline:
 
         # Stage 1: Extraction & Validation
         _notify("Extraction", 0.10, f"Validating and extracting text from '{filename}'...")
-        extracted_doc: ExtractedDocument = self.extractor.extract(file_source, filename, doc_id=doc_id)
+        target_doc_id = doc_id
+        if not target_doc_id and user_id is not None:
+            # Deterministic prefix with user isolation and short timestamp suffix
+            file_bytes_temp = self.extractor.validate_file(file_source, filename)
+            f_hash = self.extractor.compute_sha256(file_bytes_temp)
+            ts = str(int(time.time()))[-5:]
+            target_doc_id = f"DOC_U{user_id}_{f_hash[:6].upper()}_{ts}"
+
+        extracted_doc: ExtractedDocument = self.extractor.extract(file_source, filename, doc_id=target_doc_id)
         active_doc_id = extracted_doc.doc_id
 
-        # Persist document metadata
+        # Persist document metadata with user ownership
         self.db.save_document({
             "id": active_doc_id,
+            "user_id": user_id,
             "filename": extracted_doc.filename,
             "file_hash": extracted_doc.file_hash,
             "total_pages": extracted_doc.total_pages,

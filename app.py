@@ -483,9 +483,15 @@ else:
         unsafe_allow_html=True,
     )
 
+    current_user_id = user["id"]
+
     if st.sidebar.button("Sign Out", use_container_width=True):
         st.session_state["authenticated_user"] = None
         st.session_state.pop("benchmark_results", None)
+        # Clear user document selection state
+        for k in list(st.session_state.keys()):
+            if "selected_doc" in k:
+                st.session_state.pop(k, None)
         st.rerun()
 
     st.sidebar.markdown("<div style='margin: 0.75rem 0;'></div>", unsafe_allow_html=True)
@@ -504,23 +510,32 @@ else:
         index=0,
     )
 
-    # Document selection in sidebar
-    docs = db_manager.list_documents()
+    # Document selection in sidebar - strictly isolated per private user account
+    docs = db_manager.list_documents(user_id=current_user_id)
     doc_options = {d["id"]: f"{d['filename']} ({d['id']})" for d in docs}
     selected_doc_id = None
 
     if docs:
         st.sidebar.markdown("<div style='margin-top: 1.5rem; margin-bottom: 0.5rem; font-size: 0.8rem; font-weight: 700; color: #64748B; text-transform: uppercase; letter-spacing: 0.05em;'>Active Tender</div>", unsafe_allow_html=True)
+        user_doc_key = f"selected_doc_user_{current_user_id}"
+        default_idx = 0
+        if user_doc_key in st.session_state and st.session_state[user_doc_key] in doc_options:
+            default_idx = list(doc_options.keys()).index(st.session_state[user_doc_key])
+
         selected_doc_id = st.sidebar.selectbox(
             "Select Document",
             options=list(doc_options.keys()),
             format_func=lambda x: doc_options[x],
-            index=0,
+            index=default_idx,
+            key=f"doc_select_{current_user_id}",
             label_visibility="collapsed"
         )
+        st.session_state[user_doc_key] = selected_doc_id
+
         if st.sidebar.button("🗑️ Delete Tender", type="secondary", use_container_width=True):
-            db_manager.delete_document(selected_doc_id)
+            db_manager.delete_document(selected_doc_id, user_id=current_user_id)
             st.sidebar.success(f"Document {selected_doc_id} deleted.")
+            st.session_state.pop(user_doc_key, None)
             st.rerun()
 
     # -------------------------------------------------------------
@@ -537,7 +552,7 @@ else:
             unsafe_allow_html=True,
         )
 
-        all_findings = db_manager.get_findings_with_reviews()
+        all_findings = db_manager.get_findings_with_reviews(user_id=current_user_id)
         total_docs = len(docs)
         total_findings = len(all_findings)
         high_priority = sum(1 for f in all_findings if f.get("priority") == "High")
@@ -587,12 +602,12 @@ else:
             st.markdown("</div>", unsafe_allow_html=True)
 
         if docs:
-            st.markdown("<div style='font-size: 1.1rem; font-weight: 700; color: #0F172A; margin: 1.25rem 0 0.75rem 0;'>Analyzed Document Registry</div>", unsafe_allow_html=True)
+            st.markdown("<div style='font-size: 1.1rem; font-weight: 700; color: #0F172A; margin: 1.25rem 0 0.75rem 0;'>My Analyzed Documents</div>", unsafe_allow_html=True)
             doc_df = pd.DataFrame(docs)[["id", "filename", "total_pages", "scanned_pages_count", "status", "uploaded_at"]]
             doc_df.columns = ["Document ID", "Filename", "Pages", "Scanned Pages", "Status", "Uploaded At"]
             st.dataframe(doc_df, use_container_width=True, hide_index=True)
         else:
-            st.info("No documents analyzed yet. Go to **Upload & Analyze** to process your first tender.")
+            st.info("No documents analyzed yet in your account. Go to **Upload & Analyze** to process your first tender.")
 
     # -------------------------------------------------------------
     # 2. UPLOAD & ANALYZE
@@ -660,8 +675,12 @@ else:
                     result = pipeline.process_pdf(
                         file_source=target_source,
                         filename=target_filename,
+                        user_id=current_user_id,
                         progress_callback=update_progress
                     )
+                # Automatically make newly analyzed document the active document for current user
+                st.session_state[f"selected_doc_user_{current_user_id}"] = result["doc_id"]
+
                 progress_bar.progress(1.0)
                 status_text.markdown("✅ **Analysis Completed Successfully!**")
 
@@ -699,12 +718,15 @@ else:
         )
 
         if not selected_doc_id:
-            st.info("No tender documents analyzed yet. Please upload a document in **Upload & Analyze** first.")
+            st.info("No tender documents analyzed yet in your account. Please upload a document in **Upload & Analyze** first.")
         else:
-            doc = db_manager.get_document(selected_doc_id)
-            clauses = db_manager.get_clauses(selected_doc_id)
+            doc = db_manager.get_document(selected_doc_id, user_id=current_user_id)
+            if not doc:
+                st.warning("Document not found or access denied.")
+            else:
+                clauses = db_manager.get_clauses(selected_doc_id, user_id=current_user_id)
 
-            st.caption(f"Active Document: **{doc['filename']}** (ID: `{selected_doc_id}` | Total Clauses: {len(clauses)})")
+                st.caption(f"Active Document: **{doc['filename']}** (ID: `{selected_doc_id}` | Total Clauses: {len(clauses)})")
 
             # Filters
             c_filter1, c_filter2, c_filter3 = st.columns([1.5, 1, 2])
@@ -762,10 +784,14 @@ else:
         )
 
         if not selected_doc_id:
-            st.info("No tender documents available. Please upload a tender document first.")
+            st.info("No tender documents available in your account. Please upload a tender document first.")
         else:
-            all_f = db_manager.get_findings_with_reviews(doc_id=selected_doc_id)
-            rev_summary = review_manager.get_review_summary(doc_id=selected_doc_id)
+            doc = db_manager.get_document(selected_doc_id, user_id=current_user_id)
+            if not doc:
+                st.warning("Document not found or access denied.")
+            else:
+                all_f = db_manager.get_findings_with_reviews(doc_id=selected_doc_id, user_id=current_user_id)
+                rev_summary = review_manager.get_review_summary(doc_id=selected_doc_id, user_id=current_user_id)
 
             # Metric summary row
             m1, m2, m3, m4 = st.columns(4)
@@ -912,13 +938,16 @@ else:
         )
 
         if not selected_doc_id:
-            st.info("No tender documents available for export. Please upload a document first.")
+            st.info("No tender documents available for export in your account. Please upload a document first.")
         else:
-            doc = db_manager.get_document(selected_doc_id)
-            findings = db_manager.get_findings_with_reviews(doc_id=selected_doc_id)
-            clauses = db_manager.get_clauses(selected_doc_id)
+            doc = db_manager.get_document(selected_doc_id, user_id=current_user_id)
+            if not doc:
+                st.warning("Document not found or access denied.")
+            else:
+                findings = db_manager.get_findings_with_reviews(doc_id=selected_doc_id, user_id=current_user_id)
+                clauses = db_manager.get_clauses(selected_doc_id, user_id=current_user_id)
 
-            st.caption(f"Active Document: **{doc['filename']}** (`{selected_doc_id}`) &nbsp;•&nbsp; {len(findings)} Findings &nbsp;•&nbsp; {len(clauses)} Clauses")
+                st.caption(f"Active Document: **{doc['filename']}** (`{selected_doc_id}`) &nbsp;•&nbsp; {len(findings)} Findings &nbsp;•&nbsp; {len(clauses)} Clauses")
 
             col1, col2, col3 = st.columns(3, gap="medium")
 

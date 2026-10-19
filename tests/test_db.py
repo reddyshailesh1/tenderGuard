@@ -219,3 +219,113 @@ def test_user_registration_and_authentication(temp_db: DatabaseManager):
     failed_auth = temp_db.authenticate_user("lead_auditor", "WrongPassword")
     assert failed_auth is None
 
+
+def test_user_document_and_finding_isolation(temp_db: DatabaseManager):
+    """Ensure strict private isolation between multiple user accounts."""
+    # User 1 creates and owns a document
+    doc_u1 = {
+        "id": "DOC_U1_CONFIDENTIAL",
+        "user_id": 1,
+        "filename": "tender_user1.pdf",
+        "file_hash": "hash_u1",
+        "total_pages": 3,
+        "file_size_bytes": 12000,
+        "status": "analyzed"
+    }
+    temp_db.save_document(doc_u1)
+    temp_db.save_clauses([{
+        "id": "C_U1_01",
+        "doc_id": "DOC_U1_CONFIDENTIAL",
+        "page_number": 1,
+        "clause_number": "1.0",
+        "original_text": "Clause belonging strictly to User 1."
+    }])
+    temp_db.save_findings([{
+        "id": "FIND_U1_01",
+        "doc_id": "DOC_U1_CONFIDENTIAL",
+        "finding_type": "Numerical Inconsistency",
+        "clause_a_id": "C_U1_01",
+        "clause_a_text": "Clause belonging strictly to User 1.",
+        "page_numbers": "1",
+        "rule_triggered": "NUM_01",
+        "explanation": "Conflict in User 1 document.",
+        "priority": "High",
+        "model_identifier": "test_model"
+    }])
+
+    # User 2 registered
+    uid2 = temp_db.create_user(
+        username="auditor_two",
+        email="auditor2@agency.gov",
+        full_name="Second Officer",
+        password="password123"
+    )
+
+    # User 2 creates and owns a document
+    doc_u2 = {
+        "id": "DOC_U2_PRIVATE",
+        "user_id": uid2,
+        "filename": "tender_user2.pdf",
+        "file_hash": "hash_u2",
+        "total_pages": 2,
+        "file_size_bytes": 9000,
+        "status": "analyzed"
+    }
+    temp_db.save_document(doc_u2)
+    temp_db.save_clauses([{
+        "id": "C_U2_01",
+        "doc_id": "DOC_U2_PRIVATE",
+        "page_number": 1,
+        "clause_number": "2.0",
+        "original_text": "Clause belonging strictly to User 2."
+    }])
+    temp_db.save_findings([{
+        "id": "FIND_U2_01",
+        "doc_id": "DOC_U2_PRIVATE",
+        "finding_type": "Date Inconsistency",
+        "clause_a_id": "C_U2_01",
+        "clause_a_text": "Clause belonging strictly to User 2.",
+        "page_numbers": "1",
+        "rule_triggered": "DATE_01",
+        "explanation": "Conflict in User 2 document.",
+        "priority": "Medium",
+        "model_identifier": "test_model"
+    }])
+
+    # Test document listing isolation
+    u1_docs = temp_db.list_documents(user_id=1)
+    assert len(u1_docs) == 1
+    assert u1_docs[0]["id"] == "DOC_U1_CONFIDENTIAL"
+
+    u2_docs = temp_db.list_documents(user_id=uid2)
+    assert len(u2_docs) == 1
+    assert u2_docs[0]["id"] == "DOC_U2_PRIVATE"
+
+    # Test single document retrieval isolation
+    assert temp_db.get_document("DOC_U1_CONFIDENTIAL", user_id=1) is not None
+    assert temp_db.get_document("DOC_U1_CONFIDENTIAL", user_id=uid2) is None
+    assert temp_db.get_document("DOC_U2_PRIVATE", user_id=1) is None
+    assert temp_db.get_document("DOC_U2_PRIVATE", user_id=uid2) is not None
+
+    # Test findings retrieval isolation
+    u1_findings = temp_db.get_findings_with_reviews(user_id=1)
+    assert len(u1_findings) == 1
+    assert u1_findings[0]["id"] == "FIND_U1_01"
+
+    u2_findings = temp_db.get_findings_with_reviews(user_id=uid2)
+    assert len(u2_findings) == 1
+    assert u2_findings[0]["id"] == "FIND_U2_01"
+
+    # Test clause retrieval isolation
+    assert len(temp_db.get_clauses("DOC_U1_CONFIDENTIAL", user_id=1)) == 1
+    assert len(temp_db.get_clauses("DOC_U1_CONFIDENTIAL", user_id=uid2)) == 0
+
+    # User 2 cannot delete User 1's document
+    temp_db.delete_document("DOC_U1_CONFIDENTIAL", user_id=uid2)
+    assert temp_db.get_document("DOC_U1_CONFIDENTIAL", user_id=1) is not None
+
+    # User 1 can delete User 1's document
+    temp_db.delete_document("DOC_U1_CONFIDENTIAL", user_id=1)
+    assert temp_db.get_document("DOC_U1_CONFIDENTIAL", user_id=1) is None
+
+

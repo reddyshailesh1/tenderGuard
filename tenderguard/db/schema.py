@@ -3,6 +3,7 @@
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS documents (
     id TEXT PRIMARY KEY,
+    user_id INTEGER,
     filename TEXT NOT NULL,
     file_hash TEXT NOT NULL,
     total_pages INTEGER NOT NULL,
@@ -10,7 +11,8 @@ CREATE TABLE IF NOT EXISTS documents (
     scanned_pages_count INTEGER DEFAULT 0,
     uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     status TEXT NOT NULL,
-    error_message TEXT
+    error_message TEXT,
+    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS pages (
@@ -113,6 +115,7 @@ CREATE TABLE IF NOT EXISTS users (
 );
 
 CREATE INDEX IF NOT EXISTS idx_clauses_doc_id ON clauses(doc_id);
+CREATE INDEX IF NOT EXISTS idx_documents_user_id ON documents(user_id);
 CREATE INDEX IF NOT EXISTS idx_findings_doc_id ON findings(doc_id);
 CREATE INDEX IF NOT EXISTS idx_candidate_pairs_doc_id ON candidate_pairs(doc_id);
 CREATE INDEX IF NOT EXISTS idx_reviews_finding_id ON reviews(finding_id);

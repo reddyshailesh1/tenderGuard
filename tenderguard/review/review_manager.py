@@ -38,9 +38,9 @@ class ReviewManager:
         )
         logger.info("Updated review for finding %s: %s by %s", finding_id, status, reviewer_name)
 
-    def get_review_summary(self, doc_id: Optional[str] = None) -> Dict[str, int]:
-        """Compute aggregate counts of review decisions."""
-        findings = self.db.get_findings_with_reviews(doc_id=doc_id)
+    def get_review_summary(self, doc_id: Optional[str] = None, user_id: Optional[int] = None) -> Dict[str, int]:
+        """Compute aggregate counts of review decisions, optionally filtered by user_id or doc_id."""
+        findings = self.db.get_findings_with_reviews(doc_id=doc_id, user_id=user_id)
         summary = {status: 0 for status in REVIEW_STATUS_CHOICES}
         for f in findings:
             st = f.get("review_status", "Pending Review")
